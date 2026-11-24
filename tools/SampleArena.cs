@@ -19,6 +19,12 @@ public static class ArenaSample
             var module=manager.ActiveModule;
             if(module==null || player.WorldState.Party[0] is not Actor actor) continue;
             text.Append(module.GetType().Name).Append(module.Arena.Bounds.GetType().Name);
+            for(var i=Waymark.A;i<Waymark.Count;i++)
+                text.Append(i).Append(player.WorldState.Waymarks[i]);
+            for(var i=Sign.Attack1;i<Sign.Count;i++)
+                text.Append(i).Append(player.WorldState.Waymarks[i]);
+            foreach(var hint in module.CalculateGlobalHints(actor)) text.Append(hint);
+            foreach(var hint in module.CalculateHintsForRaidMember(0,actor)) text.Append(hint);
             foreach(var component in module.Components)
             {
                 text.Append(component.GetType().Name);

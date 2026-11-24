@@ -15,6 +15,7 @@ public sealed partial class Plugin
         private readonly Type managerType;
         private readonly object north, origin, east;
         private dynamic manager;
+        private BossMod.ZoneModuleManager zones;
         private Action update;
         private DateTime time;
         public float PixelsPerYalm { get; private set; }
@@ -22,8 +23,8 @@ public sealed partial class Plugin
         public dynamic Module => manager.ActiveModule;
         public ReplayRadar(object replay)
         {
-            BossMod.BossModule.WindowConfig.ShowWaymarks=true;
-            BossMod.BossModule.WindowConfig.ShowSigns=true;
+
+
             var a=replay.GetType().Assembly;
             player=Activator.CreateInstance(a.GetType("BossMod.ReplayPlayer",true),replay);
             managerType=a.GetType("BossMod.BossModuleManager",true);
@@ -36,18 +37,26 @@ public sealed partial class Plugin
         }
         private void BindManager()
         {
+            zones=new BossMod.ZoneModuleManager((BossMod.WorldState)World);
             manager=Activator.CreateInstance(managerType,(object)World);
             update=(Action)managerType.GetMethod("Update").CreateDelegate(typeof(Action),(object)manager);
         }
         public void Seek(DateTime next)
         {
             if(next==time) return;
-            if(next<time) { manager.Dispose(); player.Reset(); BindManager(); }
+            if(next<time) { Dispose(); player.Reset(); BindManager(); }
             player.AdvanceTo(next,update);
             time=next;
         }
+        public void DrawZone()
+        {
+            var zone=zones.ActiveModule;
+            if(zone?.WantDrawHints()==true) zone.DrawGlobalHints();
+            if(zone?.WantDrawExtra()==true) zone.DrawExtra();
+        }
         public void Draw(dynamic module,int pov)
         {
+            module.Draw((dynamic)north,pov,true,false);
             var available=ImGui.GetContentRegionAvail();
             float side=Math.Max(1,Math.Min(available.X,available.Y)-4);
             ImGui.SetCursorPos(ImGui.GetCursorPos()+Vector2.Max(Vector2.Zero,(available-new Vector2(side))/2));
@@ -65,7 +74,7 @@ public sealed partial class Plugin
             }
             finally { config.ArenaScale=scale; config.SlackForRotations=slack; config.RadarResize=resize; }
         }
-        public void Dispose()=>manager.Dispose();
+        public void Dispose() { zones.Dispose(); manager.Dispose(); }
     }
     private ReplayRadar radar;
     private float? dragSeek;
@@ -100,6 +109,7 @@ public sealed partial class Plugin
             {
                 if(child)
                 {
+                    radar.DrawZone();
                     int pov=0;
                     while(pov<8 && world.Party[pov]==null) pov++;
                     if(module!=null && pov<8)

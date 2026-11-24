@@ -24,6 +24,13 @@ $summary=$plugin.GetMethod('Summarize',$static)
 $testFolder=[IO.Directory]::CreateDirectory((Join-Path ([IO.Path]::GetTempPath()) ('pull-history-test-'+[guid]::NewGuid())))
 try{
     $owner=[Runtime.CompilerServices.RuntimeHelpers]::GetUninitializedObject($plugin)
+    $loadProfile=$plugin.GetMethod('LoadRadarProfile',$instance)
+    $loadProfile.Invoke($owner,@($testFolder))
+    $display=[BossMod.BossModule]::WindowConfig
+    if(!$display.ShowWaymarks -or !$display.ShowSigns -or !$display.ShowCardinals){throw 'Standalone radar defaults failed'}
+    [IO.File]::WriteAllText((Join-Path $testFolder.FullName 'BossModReborn.json'),'{"Payload":{"BossMod.BossModuleConfig":{"ShowCardinals":false,"WaymarkFontSize":22,"ShowSigns":true,"ProjectRadarInto3DWorld":true}}}')
+    $loadProfile.Invoke($owner,@($testFolder))
+    if($display.ShowCardinals -or $display.WaymarkFontSize -ne 22 -or !$display.ShowSigns -or $display.ProjectRadarInto3DWorld){throw 'Radar profile import failed'}
     $ws=[BossMod.WorldState]::new(10000000,'fixture')
     $ws.CurrentCFCID=1
     $plugin.GetField('world',$instance).SetValue($owner,$ws)

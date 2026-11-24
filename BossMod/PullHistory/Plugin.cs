@@ -72,6 +72,7 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
         pluginInterface.Create<BossMod.Service>();
         BossMod.Service.LuminaGameData=data.GameData;
         BossMod.Service.Config.Initialize();
+        LoadRadarProfile(pluginInterface.ConfigDirectory.Parent!);
         BossMod.Service.LogHandlerDebug=message=>log.Debug(message);
         BossMod.Service.LogHandlerVerbose=message=>log.Verbose(message);
         var gameFolder=Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName);
@@ -104,6 +105,33 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
     private static FieldInfo Field(Type type, string name, BindingFlags flags = Instance) =>
         type.GetField(name, flags) ?? throw new MissingFieldException(type.FullName, name);
     private static object Read(object obj, string name) => Field(obj.GetType(), name).GetValue(obj);
+
+    private void LoadRadarProfile(DirectoryInfo directory)
+    {
+        var config = BossMod.Service.Config;
+        var radarConfig = config.Get<BossMod.BossModuleConfig>();
+        radarConfig.ShowCardinals = radarConfig.ShowWaymarks = radarConfig.ShowSigns = true;
+        var path = Path.Combine(directory.FullName, "BossModReborn.json");
+        if (!File.Exists(path)) return;
+        try
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            var payload = json.RootElement.GetProperty("Payload");
+            var options = BossMod.Serialization.BuildSerializationOptions();
+            foreach (var (type, node) in config._nodes)
+            {
+                bool encounter = type.Namespace?.Split('.').ElementAtOrDefault(1) is
+                    "RealmReborn" or "Heavensward" or "Stormblood" or "Shadowbringers" or "Endwalker" or "Dawntrail" or "Global";
+                if (!(encounter || node is BossMod.BossModuleConfig or BossMod.ZoneModuleConfig or BossMod.ColorConfig or BossMod.PartyRolesConfig)) continue;
+                if (!payload.TryGetProperty(type.FullName!, out var settings)) continue;
+                try { node.Deserialize(settings, options); }
+                catch (Exception ex) { log.Warning(ex, $"Could not read replay settings for {type.Name}."); }
+            }
+        }
+        catch (Exception ex) { log.Warning(ex, "Could not read BMR radar settings."); }
+        // Recorded actors belong only in the playback panel.
+        radarConfig.ProjectRadarInto3DWorld = false;
+    }
 
     private static DirectoryInfo ResolveArchive(IDalamudPluginInterface pi,out bool anonymize)
     {
