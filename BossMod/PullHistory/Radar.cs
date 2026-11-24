@@ -232,7 +232,7 @@ public sealed partial class Plugin
         }
         Arc(radius,-3*quarter,3*quarter,0xdb211821,3.8f);
         Arc(radius,-3*quarter,3*quarter,rim,2f);
-        Arc(inner,-3*quarter,3*quarter,innerColor,1f);
+        draw.AddCircle(center,inner,innerColor,96,1f);
         for(int i=-3;i<=3;i+=2)
         {
             float angle=heading+i*quarter;
