@@ -115,6 +115,8 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
         var radarConfig = config.Get<BossMod.BossModuleConfig>();
         radarConfig.ShowCardinals = radarConfig.ShowWaymarks = radarConfig.ShowSigns = true;
         var path = Path.Combine(directory.FullName, "BossModReborn.json");
+        // Pull History also records instanced bosses with work-in-progress mechanic coverage.
+        radarConfig.MinMaturity = BossMod.BossModuleInfo.Maturity.WIP;
         if (!File.Exists(path)) return;
         try
         {
@@ -132,6 +134,8 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
             }
         }
         catch (Exception ex) { log.Warning(ex, "Could not read BMR radar settings."); }
+        if (radarConfig.MinMaturity > BossMod.BossModuleInfo.Maturity.WIP)
+            radarConfig.MinMaturity = BossMod.BossModuleInfo.Maturity.WIP;
         // Recorded actors belong only in the playback panel.
         radarConfig.ProjectRadarInto3DWorld = false;
     }

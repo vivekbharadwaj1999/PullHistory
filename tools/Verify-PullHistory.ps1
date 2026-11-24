@@ -28,9 +28,10 @@ try{
     $loadProfile.Invoke($owner,@($testFolder))
     $display=[BossMod.BossModule]::WindowConfig
     if(!$display.ShowWaymarks -or !$display.ShowSigns -or !$display.ShowCardinals){throw 'Standalone radar defaults failed'}
-    [IO.File]::WriteAllText((Join-Path $testFolder.FullName 'BossModReborn.json'),'{"Payload":{"BossMod.BossModuleConfig":{"ShowCardinals":false,"WaymarkFontSize":22,"ShowSigns":true,"ProjectRadarInto3DWorld":true}}}')
+    [IO.File]::WriteAllText((Join-Path $testFolder.FullName 'BossModReborn.json'),'{"Payload":{"BossMod.BossModuleConfig":{"MinMaturity":"Contributed","ShowCardinals":false,"WaymarkFontSize":22,"ShowSigns":true,"ProjectRadarInto3DWorld":true}}}')
     $loadProfile.Invoke($owner,@($testFolder))
     if($display.ShowCardinals -or $display.WaymarkFontSize -ne 22 -or !$display.ShowSigns -or $display.ProjectRadarInto3DWorld){throw 'Radar profile import failed'}
+    if($display.MinMaturity -ne [BossMod.BossModuleInfo+Maturity]::WIP){throw 'WIP encounters excluded from recording'}
     $ws=[BossMod.WorldState]::new(10000000,'fixture')
     $ws.CurrentCFCID=1
     $plugin.GetField('world',$instance).SetValue($owner,$ws)
@@ -61,6 +62,39 @@ try{
     $listed=$plugin.GetMethod('History',$static).Invoke($null,@($alternate))
     if($listed.Length -ne 1 -or $testFolder.GetFiles('Pull-*.log').Length -ne 2){throw 'Folder switch or archive listing failed'}
     if($roundtrip.GameVersion -ne 'fixture'){throw 'New recording failed to round-trip'}
+    $o1=$testFolder.CreateSubdirectory("deltascape")
+    $plugin.GetField('pullDirectory',$instance).SetValue($owner,$o1)
+    $ws.CurrentCFCID=252
+    $time=[datetime]::Now
+    function AdvanceFixture([int]$seconds){
+        $frame=[BossMod.FrameState]::new($time.AddSeconds($seconds),[ulong](10000000*(1+$seconds)),[uint32](1+$seconds),1,1,1)
+        $ws.Execute([BossMod.WorldState+OpFrameStart]::new([ref]$frame,[timespan]::Zero,[Activator]::CreateInstance([BossMod.ClientState+Gauge]),[BossMod.Angle]::new(0)))
+    }
+    AdvanceFixture 0
+    $hp=[BossMod.ActorHPMP]::new(100,100,0,0,0)
+    $pos=[Numerics.Vector4]::Zero
+    $mgr=[BossMod.BossModuleManager]::new($ws)
+    $on=$mgr.ModuleActivated.Subscribe([Action[BossMod.BossModule]]{param($m) $plugin.GetMethod('Begin',$instance).Invoke($owner,@($m))})
+    $off=$mgr.ModuleDeactivated.Subscribe([Action[BossMod.BossModule]]{param($m) $plugin.GetMethod('End',$instance).Invoke($owner,@($m))})
+    try{
+        $ws.Execute([BossMod.ActorState+OpCreate]::new(101,0,0,0,"Player",0,"Player","PLD",70,$pos,1,$hp,$true,$true,0,0,0))
+        $ws.Execute([BossMod.PartyState+OpModify]::new(0,[BossMod.PartyState+Member]::new(1001,101,$false)))
+        $ws.Execute([BossMod.ActorState+OpCreate]::new(102,0x1A6F,1,0,"Alte Roite",5629,"Enemy","None",70,$pos,1,$hp,$true,$false,0,0,0))
+        $ws.Execute([BossMod.ActorState+OpCombat]::new(102,$true))
+        $mgr.Update()
+        if(!$plugin.GetField('recording',$instance).GetValue($owner)){throw 'Deltascape activation missed'}
+        AdvanceFixture 5
+        $ws.Execute([BossMod.ActorState+OpHPMP]::new(102,[BossMod.ActorHPMP]::new(0,100,0,0,0)))
+        $ws.Execute([BossMod.ActorState+OpDead]::new(102,$true))
+        $mgr.Update()
+        if(!$plugin.GetField('finishing',$instance).GetValue($owner)){throw 'Deltascape death missed'}
+        $plugin.GetMethod('Finish',$instance).Invoke($owner,@())
+        $file=$o1.GetFiles('Pull-*.log')
+        if($file.Length -ne 1){throw 'Deltascape recording missing'}
+        $check=[BossMod.ReplayParserLog]::Parse($file[0].FullName,[ref]$progress,[Threading.CancellationToken]::None)
+        if($summary.Invoke($null,@($check)).Outcome -ne 'Success'){throw 'Deltascape replay outcome wrong'}
+        'Simulated Deltascape V1.0 pull, death, archive and Success verified.'
+    }finally{$on.Dispose();$off.Dispose();$mgr.Dispose()}
 }finally{$testFolder.Delete($true)}
 foreach($fight in 'M10S','M11S'){
     $file=Get-ChildItem -LiteralPath $Archive -Filter "*$fight*.log"|Sort-Object Length -Descending|Select-Object -First 1
