@@ -20,6 +20,8 @@ public sealed partial class Plugin
     private string summaryPath;
     private CancellationTokenSource summaryCancel;
     private int editedLimit;
+    private int refreshIndex = -1;
+    private bool scrollToNewest;
 
     private static PullSummary Summarize(object replay)
     {
@@ -59,6 +61,16 @@ public sealed partial class Plugin
             if(id==0x40000003 || id==0x40000002) outcome="Success";
             else if(id==0x40000005) outcome="Failure";
         }
+        if (outcome == "Unknown" && replay is BossMod.Replay recording && recording.Encounters.Count == 1)
+        {
+            var fight = recording.Encounters[0];
+            var boss = recording.FindParticipant(fight.InstanceID, fight.Time.Start);
+            if (boss?.Type == BossMod.ActorType.Enemy && boss.OID == fight.OID && lastEnd >= firstStart
+                && boss.HPMPAt(lastEnd) is { CurHP: 0, MaxHP: > 0 } && boss.DeadAt(lastEnd)
+                && boss.DeadHistory.Any(change => change.Item2 && change.Item1 >= firstStart
+                    && change.Item1 <= lastEnd && (lastEnd - change.Item1).TotalSeconds <= 2))
+                outcome = "Success";
+        }
         return new PullSummary(duration,roster.Values.ToArray(),outcome);
     }
 
@@ -74,7 +86,7 @@ public sealed partial class Plugin
     {
         if(summaryTask?.IsCompleted==true)
         {
-            if(summaryTask.IsCompletedSuccessfully) summaries[summaryPath]=summaryTask.Result;
+            if(!summaryCancel.IsCancellationRequested && summaryTask.IsCompletedSuccessfully) summaries[summaryPath]=summaryTask.Result;
             else if(summaryTask.IsFaulted)
             {
                 log.Error(summaryTask.Exception,"Could not read pull metadata for {Path}",summaryPath);
@@ -193,6 +205,7 @@ public sealed partial class Plugin
             ImGui.TableSetupColumn("Players",ImGuiTableColumnFlags.WidthFixed,8*(2*JobIconHalfSize+2));
             ImGui.TableSetupScrollFreeze(0,1);
             ImGui.TableHeadersRow();
+            if (scrollToNewest) { ImGui.SetScrollY(0); scrollToNewest = false; }
             foreach(var row in rows)
             {
                 float side=2*JobIconHalfSize;

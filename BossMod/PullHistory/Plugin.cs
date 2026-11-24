@@ -275,12 +275,28 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
             ImGui.AlignTextToFramePadding();
             ImGui.TextUnformatted($"Saved pulls ({rows.Length})");
             ImGui.SameLine();
-            float settingsWidth=ImGui.CalcTextSize("Settings").X+2*ImGui.GetStyle().FramePadding.X;
+            float settingsWidth=ImGui.CalcTextSize("Refresh").X+ImGui.CalcTextSize("Settings").X
+                +4*ImGui.GetStyle().FramePadding.X+ImGui.GetStyle().ItemSpacing.X;
             ImGui.SetCursorPosX(ImGui.GetCursorPosX()+Math.Max(0,ImGui.GetContentRegionAvail().X-settingsWidth));
+            if (ImGui.Button("Refresh"))
+            {
+                summaryCancel?.Cancel();
+                summaries.Clear();
+                listDirty = true;
+                refreshIndex = 0;
+                scrollToNewest = true;
+            }
+            ImGui.SameLine();
             DrawHistorySettings();
             ImGui.Separator();
             if (listMessage != null) ImGui.TextUnformatted(listMessage);
             else DrawHistoryTable();
+            if (refreshIndex >= 0 && !listDirty)
+            {
+                while (refreshIndex < rows.Length && summaries.ContainsKey(rows[refreshIndex].File.FullName)) refreshIndex++;
+                if (refreshIndex < rows.Length) SummaryFor(rows[refreshIndex].File);
+                else refreshIndex = -1;
+            }
         }
         finally { ImGui.End(); }
     }
