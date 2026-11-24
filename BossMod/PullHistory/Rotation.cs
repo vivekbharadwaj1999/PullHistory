@@ -48,9 +48,7 @@ public sealed partial class Plugin
                 int match=windows.FindIndex(w=>w.Start<=time && (time-w.End).TotalSeconds<=0.35);
                 if(match>=0){windows.RemoveAt(match); continue;}
             }
-            float animationLock=action.AnimationLock;
-            double hold=float.IsFinite(animationLock) && animationLock>0 ? animationLock : .35;
-            events.Add((time,new Skill(id,item,time.AddSeconds(hold),false)));
+            events.Add((time,new Skill(id,item,time,false)));
         }
         rotations=timelines.ToDictionary(pair=>pair.Key,pair=>pair.Value.OrderBy(e=>e.Item1).ToArray());
     }
@@ -89,7 +87,7 @@ public sealed partial class Plugin
     {
         if(!rotations.TryGetValue(player,out var sequence)) sequence=Array.Empty<(DateTime,Skill)>();
         int latest=CurrentSkill(sequence,at);
-        bool active=latest>=0 && at<sequence[latest].Item2.End;
+        bool casting=latest>=0 && sequence[latest].Item2.Cast && at<sequence[latest].Item2.End;
         float width=ImGui.GetContentRegionAvail().X;
         const float currentScale=1.10f;
         float size=Math.Max(1,Math.Min(ImGui.GetTextLineHeight()*1.68f,(width*.72f-16)/(8+currentScale)));
@@ -99,14 +97,14 @@ public sealed partial class Plugin
         {
             if(slot!=-4) ImGui.SameLine(0,2);
             float cellWidth=slot==0 ? rowHeight : size;
-            float iconSize=slot==0 && active ? rowHeight : size;
+            float iconSize=cellWidth;
             var cell=new Vector2(cellWidth,rowHeight);
             var pos=ImGui.GetCursorScreenPos()+(cell-new Vector2(iconSize))*.5f;
             var end=pos+new Vector2(iconSize);
             ImGui.Dummy(cell);
             draw.AddRectFilled(pos,end,0xb0302929,2);
-            int index=latest+slot+(!active && slot<0 ? 1 : 0);
-            if((slot!=0 || active) && index>=0 && index<sequence.Length)
+            int index=latest+slot;
+            if(index>=0 && index<sequence.Length)
             {
                 var (start,skill)=sequence[index];
                 var info=SkillInfo(skill);
@@ -124,7 +122,7 @@ public sealed partial class Plugin
         }
         ImGui.SameLine(0,4);
         float barWidth=Math.Max(1,ImGui.GetContentRegionAvail().X);
-        if(active && sequence[latest].Item2.Cast)
+        if(casting)
         {
             var (start,skill)=sequence[latest];
             float total=(float)(skill.End-start).TotalSeconds;

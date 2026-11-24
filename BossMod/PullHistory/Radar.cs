@@ -51,12 +51,10 @@ public sealed partial class Plugin
         public void DrawZone()
         {
             var zone=zones.ActiveModule;
-            if(zone?.WantDrawHints()==true) zone.DrawGlobalHints();
             if(zone?.WantDrawExtra()==true) zone.DrawExtra();
         }
         public void Draw(dynamic module,int pov)
         {
-            module.Draw((dynamic)north,pov,true,false);
             var available=ImGui.GetContentRegionAvail();
             float side=Math.Max(1,Math.Min(available.X,available.Y)-4);
             ImGui.SetCursorPos(ImGui.GetCursorPos()+Vector2.Max(Vector2.Zero,(available-new Vector2(side))/2));
