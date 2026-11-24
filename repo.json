@@ -3,13 +3,13 @@
     "Author": "Pull History contributors",
     "Name": "Pull History",
     "InternalName": "PullHistory",
-    "AssemblyVersion": "1.0.0.2",
+    "AssemblyVersion": "1.0.0.3",
     "Description": "Record and replay duty pulls with a standalone encounter radar, party rotations, cast bars and configurable history.",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
     "RepoUrl": "https://github.com/vivekbharadwaj1999/PullHistory",
-    "DownloadLinkInstall": "https://raw.githubusercontent.com/vivekbharadwaj1999/PullHistory/dalamud/PullHistory-1.0.0.2.zip",
-    "DownloadLinkUpdate": "https://raw.githubusercontent.com/vivekbharadwaj1999/PullHistory/dalamud/PullHistory-1.0.0.2.zip",
-    "LastUpdate": 1795561778
+    "DownloadLinkInstall": "https://raw.githubusercontent.com/vivekbharadwaj1999/PullHistory/dalamud/PullHistory-1.0.0.3.zip",
+    "DownloadLinkUpdate": "https://raw.githubusercontent.com/vivekbharadwaj1999/PullHistory/dalamud/PullHistory-1.0.0.3.zip",
+    "LastUpdate": 1795562089
   }
 ]
