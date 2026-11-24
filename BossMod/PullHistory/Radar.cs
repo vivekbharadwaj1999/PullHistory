@@ -22,6 +22,8 @@ public sealed partial class Plugin
         public dynamic Module => manager.ActiveModule;
         public ReplayRadar(object replay)
         {
+            BossMod.BossModule.WindowConfig.ShowWaymarks=true;
+            BossMod.BossModule.WindowConfig.ShowSigns=true;
             var a=replay.GetType().Assembly;
             player=Activator.CreateInstance(a.GetType("BossMod.ReplayPlayer",true),replay);
             managerType=a.GetType("BossMod.BossModuleManager",true);
@@ -188,8 +190,45 @@ public sealed partial class Plugin
         Vector2 center=MarkerCenter(module,selected,at);
         // Draw last so small player hitboxes remain visible even inside stacked icons.
         var draw=ImGui.GetWindowDrawList();
+        if(selected.Type.ToString()=="Enemy")
+        {
+            DrawEnemyRing(center,radius,(float)selected.PosRot.W,(bool)selected.Omnidirectional,true);
+            return;
+        }
         draw.AddCircle(center,radius,0xff38261a,96,4f);
         draw.AddCircle(center,radius,0xffd5ff46,96,2f);
+    }
+
+    private static void DrawEnemyRing(Vector2 center,float radius,float rotation,bool omni,bool selected)
+    {
+        var draw=ImGui.GetWindowDrawList();
+        uint rim=selected ? 0xffd5ff46u : 0xff6582eeu;
+        uint innerColor=selected ? 0xff9dc735u : 0xff5275c7u;
+        float inner=radius-Math.Min(5f,radius*.22f);
+        if(omni)
+        {
+            draw.AddCircle(center,radius,0xdb211821,96,3.8f);
+            draw.AddCircle(center,radius,rim,96,2f);
+            draw.AddCircle(center,inner,innerColor,96,1f);
+            return;
+        }
+        // Zero game rotation faces south on the north-up radar.
+        float heading=MathF.PI/2-rotation;
+        float quarter=MathF.PI/4;
+        void Arc(float r,float start,float end,uint color,float thickness)
+        {
+            draw.PathArcTo(center,r,heading+start,heading+end);
+            draw.PathStroke(color,ImDrawFlags.None,thickness);
+        }
+        Arc(radius,-3*quarter,3*quarter,0xdb211821,3.8f);
+        Arc(radius,-3*quarter,3*quarter,rim,2f);
+        Arc(inner,-3*quarter,3*quarter,innerColor,1f);
+        for(int i=-3;i<=3;i+=2)
+        {
+            float angle=heading+i*quarter;
+            var ray=new Vector2(MathF.Cos(angle),MathF.Sin(angle));
+            draw.AddLine(center+ray*inner,center+ray*radius,rim,1.5f);
+        }
     }
 
     private void DrawMarker(dynamic actor,Vector2 xy,bool player)
@@ -207,10 +246,7 @@ public sealed partial class Plugin
             if(float.IsFinite(hit) && hit>0)
             {
                 radius=hit;
-                draw.AddCircle(xy,hit,0xdb211821,96,3.8f);
-                draw.AddCircle(xy,hit,0xff6582ee,96,1.8f);
-                float inner=hit-Math.Min(5f,hit*.22f);
-                draw.AddCircle(xy,inner,0xff5275c7,96,1f);
+                DrawEnemyRing(xy,hit,(float)actor.PosRot.W,(bool)actor.Omnidirectional,false);
             }
         }
         Vector4 pos=actor.PosRot;
