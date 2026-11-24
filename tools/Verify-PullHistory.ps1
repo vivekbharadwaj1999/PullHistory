@@ -49,6 +49,17 @@ try{
     if($saved.Length -ne 2){throw 'Recorder lifecycle or retention failed'}
     $progress=[single]0
     $roundtrip=[BossMod.ReplayParserLog]::Parse($saved[0].FullName,[ref]$progress,[Threading.CancellationToken]::None)
+    $alternate=$testFolder.CreateSubdirectory("alternate")
+    $plugin.GetMethod('Begin',$instance).Invoke($owner,@($module))
+    $plugin.GetField('pullDirectory',$instance).SetValue($owner,$alternate)
+    $plugin.GetMethod('End',$instance).Invoke($owner,@($module))
+    $plugin.GetMethod('Finish',$instance).Invoke($owner,@())
+    if($alternate.GetFiles('Pull-*.log').Length -ne 0){throw 'Active pull changed destination'}
+    $plugin.GetMethod('Begin',$instance).Invoke($owner,@($module))
+    $plugin.GetMethod('End',$instance).Invoke($owner,@($module))
+    $plugin.GetMethod('Finish',$instance).Invoke($owner,@())
+    $listed=$plugin.GetMethod('History',$static).Invoke($null,@($alternate))
+    if($listed.Length -ne 1 -or $testFolder.GetFiles('Pull-*.log').Length -ne 2){throw 'Folder switch or archive listing failed'}
     if($roundtrip.GameVersion -ne 'fixture'){throw 'New recording failed to round-trip'}
 }finally{$testFolder.Delete($true)}
 foreach($fight in 'M10S','M11S'){

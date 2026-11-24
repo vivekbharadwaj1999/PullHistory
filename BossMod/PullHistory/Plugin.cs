@@ -39,6 +39,7 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
     public sealed class PlaybackSettings : Dalamud.Configuration.IPluginConfiguration
     {
         public int Version { get; set; } = 1;
+        public string LogFolder { get; set; }
         public int PullLimit { get; set; } = 100;
         public bool ShowRotationsAndCastBars { get; set; }
     }
@@ -69,6 +70,8 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
             pullDirectory=new DirectoryInfo(Path.Combine(pluginInterface.ConfigDirectory.FullName,"replays","PullHistory"));
             anonymize=true;
         }
+        if (!string.IsNullOrWhiteSpace(playbackSettings.LogFolder) && Path.IsPathFullyQualified(playbackSettings.LogFolder))
+            pullDirectory = new DirectoryInfo(playbackSettings.LogFolder);
         pluginInterface.Create<BossMod.Service>();
         BossMod.Service.LuminaGameData=data.GameData;
         BossMod.Service.Config.Initialize();
@@ -242,6 +245,7 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
 
     private void DrawList()
     {
+        folderDialog.Draw();
         if (!listOpen) return;
         if (listDirty)
         {

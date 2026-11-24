@@ -101,6 +101,32 @@ public sealed partial class Plugin
         foreach(var old in History(folder).Skip(HistoryLimit)) old.Delete();
     }
 
+    private readonly Dalamud.Interface.ImGuiFileDialog.FileDialogManager folderDialog = new();
+
+    private void SelectLogFolder(bool selected, string path)
+    {
+        if (!selected) return;
+        var previous = playbackSettings.LogFolder;
+        try
+        {
+            var destination = new DirectoryInfo(path);
+            // Probe the same staging folder the recorder will use.
+            var staging = destination.CreateSubdirectory("InProgress");
+            using (new FileStream(Path.Combine(staging.FullName, Guid.NewGuid().ToString("N")), FileMode.CreateNew,
+                FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose)) { }
+            playbackSettings.LogFolder = destination.FullName;
+            pluginInterface.SavePluginConfig(playbackSettings);
+            pullDirectory = destination;
+            listDirty = true;
+        }
+        catch (Exception ex)
+        {
+            playbackSettings.LogFolder = previous;
+            log.Warning(ex, "Could not select replay folder {Path}", path);
+            chat.Print("Pull History: could not use that folder. Check that you can write to it and try again.");
+        }
+    }
+
     private void DrawHistorySettings()
     {
         if(ImGui.Button("Settings"))
@@ -111,6 +137,14 @@ public sealed partial class Plugin
         if(!ImGui.BeginPopup("Pull history settings")) return;
         try
         {
+            ImGui.TextUnformatted("Log folder");
+            ImGui.TextUnformatted(PullFolder().FullName);
+            if (ImGui.Button("Choose log folder..."))
+            {
+                ImGui.CloseCurrentPopup();
+                folderDialog.OpenFolderDialog("Choose Pull History log folder", SelectLogFolder, PullFolder().FullName);
+            }
+            ImGui.Separator();
             ImGui.SetNextItemWidth(130);
             ImGui.InputInt("Latest pulls to keep",ref editedLimit);
             if(editedLimit<1) ImGui.TextUnformatted("Enter at least 1.");
