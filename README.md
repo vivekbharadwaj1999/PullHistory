@@ -1,29 +1,19 @@
-# [![](https://raw.githubusercontent.com/FFXIV-CombatReborn/RebornAssets/main/IconAssets/BMR_Icon.png)](https://github.com/FFXIV-CombatReborn/BossmodReborn)
+# Pull History
 
-**BossmodReborn**
+A standalone Dalamud plugin for recording encounter pulls and reviewing them with an arena radar. Open the list with `/lastpull`. The table shows the time, encounter, outcome, duration and party jobs. Click a job to open playback. The settings button controls retention. The replay has selectable hitboxes, vitals, status tooltips, casts and nine-action player timelines.
 
-![Github Latest Releases](https://img.shields.io/github/downloads/FFXIV-CombatReborn/BossmodReborn/latest/total.svg?style=for-the-badge)
-![Github License](https://img.shields.io/github/license/FFXIV-CombatReborn/BossmodReborn.svg?label=License&style=for-the-badge)
-[![](https://dcbadge.limes.pink/api/server/p54TZMPnC9)](https://discord.gg/p54TZMPnC9)
+## Installation
 
-BossmodReborn is a community-driven fork of the original Bossmod plugin for Final Fantasy XIV. It aims to enhance your gameplay by providing real-time tactical guidance and tools that simplify complex raid mechanics. This tool is invaluable for optimizing in-game strategies, ensuring precise positioning, and enhancing overall raid performance.
+Add the following custom plugin repository in Dalamud Settings and install **Pull History**. Enable automatic updates for Pull History in Dalamud. Disable the old development copy of Pull History before installing this version. BossMod Reborn can be disabled. Existing Pull History recordings in the previous replay folder are supported.
 
-## Features
+    https://raw.githubusercontent.com/vivekbharadwaj1999/PullHistory/dalamud/repo.json
 
-- **Advanced Radar System**: A sophisticated on-screen map displaying player and boss positions, imminent AOEs, and other crucial mechanics. This system helps players visualize the battlefield, simplifying decision-making processes.
-- **Mechanic Descriptors**: Near the radar, you’ll find clear, concise descriptions of upcoming mechanics, global hints for resolving current challenges, and personalized player advice to optimize your response to each situation.
-- **Cooldown Planner**: A tool for meticulous planning of ability usage, ensuring optimal timing for cooldowns and abilities in coordination with raid strategies.
-- **User-Friendly Interface**: Designed with accessibility in mind with a wonderful module viewer by Croizat, the interface is intuitive, allowing players of all skill levels to benefit from the plugin.
-- **Regular Updates**: Committed to staying current with the latest game patches, class updates, and community feedback. PRs will be reviewed, tested, and approved.
+Recordings are stored on your computer. New installations use the plugin configuration folder under `replays/PullHistory`. Existing BossMod Reborn replay-folder and anonymization settings are recognized. An interrupted recording remains in the InProgress folder.
 
-## Want to contribute?
+## Building and verifying
 
-- Create a fork
-- Make your changes
-- Test the changes
-- Create a PR and point it to main
+The standalone source branch is `pull-history-standalone`. The `dalamud` branch contains the install manifest and versioned packages. Use PowerShell 7, .NET 10, and the matching Dalamud development assemblies. From this branch run `tools/Build-Release.ps1` with the .NET executable, a local pull archive containing M10S and M11S, the matching upstream reference DLL, and an empty output folder. Verification includes capture and readback, retention, encounter playback, roster, rotations, rewind, package extraction and a sampled mechanic-geometry comparison against the same upstream release.
 
-## Fork for CN client
-- A fork for players on the CN client can be found on https://github.com/44451516-ff14/BossmodRebornCN.
-- It is not directly supported by the Combat Reborn Team, so any bugs exclusive to that fork need to be fixed by the fork maintainer.
-- Bugs that likely affect both BossmodReborn and the CN fork can still be reported to the Combat Reborn Team.
+## Credits
+
+The encounter modules, radar and replay engine are derived from [BossMod Reborn](https://github.com/FFXIV-CombatReborn/BossmodReborn). See LICENSE and THIRD_PARTY_NOTICES.md. RebornMaterial is shipped as a separate library. The source of the included 7.5.8.4 release is available at [the matching revision](https://github.com/LTS-FFXIV/RebornMaterial/tree/0c74204ecfd6785c27ac53213950c3ad08337e63). Its license texts are in licenses/.

@@ -25,7 +25,7 @@ sealed class WorldStateGameSync : IDisposable
     private const float Thousandth = 1e-3f;
 
     private readonly WorldState _ws;
-    private readonly ActionManagerEx _amex;
+    private readonly HookAddress<ActionEffectHandler.Delegates.Receive> _actionEffects;
     private readonly DateTime _startTime;
     private readonly long _startQPC;
 
@@ -45,7 +45,7 @@ sealed class WorldStateGameSync : IDisposable
     private readonly Network.PacketDecoderGame _decoder = new();
 
     private readonly ConfigListener<ReplayManagementConfig> _netConfig;
-    private readonly EventSubscriptions _subscriptions;
+
 
     private delegate void ProcessPacketActorCastDelegate(uint casterId, Network.ServerIPC.ActorCast* packet);
 
@@ -94,138 +94,142 @@ sealed class WorldStateGameSync : IDisposable
 
     private readonly Hook<ActionManager.Delegates.GetActionInRangeOrLoS>? _getActionInRangeOrLoSHook;
 
-    public unsafe WorldStateGameSync(WorldState ws, ActionManagerEx amex)
+    public unsafe WorldStateGameSync(WorldState ws)
     {
         _ws = ws;
-        _amex = amex;
+
         _startTime = DateTime.Now;
         _startQPC = Framework.Instance()->PerformanceCounterValue;
-        _interceptor.ServerIPCReceived += ServerIPCReceived;
-        _interceptor.ClientIPCSent += ClientIPCSent;
-
-        _netConfig = Service.Config.GetAndSubscribe<ReplayManagementConfig>(config =>
+        try
         {
-            _interceptor.ActiveRecv = config.RecordServerPackets || config.DumpServerPackets;
-            _interceptor.ActiveSend = config.DumpClientPackets;
-        });
-        _subscriptions = new
-        (
-            amex.ActionRequestExecuted.Subscribe(OnActionRequested),
-            amex.ActionEffectReceived.Subscribe(OnActionEffect)
-        );
+            _interceptor.ServerIPCReceived += ServerIPCReceived;
+            _interceptor.ClientIPCSent += ClientIPCSent;
 
-        _processPacketActorCastHook = Service.Hook.HookFromSignature<ProcessPacketActorCastDelegate>("40 53 57 48 81 EC ?? ?? ?? ?? 48 8B FA 8B D1", ProcessPacketActorCastDetour);
-        _processPacketActorCastHook.Enable();
-        Service.Log($"[WSG] ProcessPacketActorCast address = 0x{_processPacketActorCastHook.Address:X}");
+            _netConfig = Service.Config.GetAndSubscribe<ReplayManagementConfig>(config =>
+            {
+                _interceptor.ActiveRecv = config.RecordServerPackets || config.DumpServerPackets;
+                _interceptor.ActiveSend = config.DumpClientPackets;
+            });
+            _actionEffects = new(ActionEffectHandler.Addresses.Receive, ObserveActionEffect);
 
-        _processPacketEffectResultHook = Service.Hook.HookFromSignature<ProcessPacketEffectResultDelegate>("48 8B C4 44 88 40 18 89 48 08", ProcessPacketEffectResultDetour);
-        _processPacketEffectResultHook.Enable();
-        Service.Log($"[WSG] ProcessPacketEffectResult address = 0x{_processPacketEffectResultHook.Address:X}");
+            _processPacketActorCastHook = Service.Hook.HookFromSignature<ProcessPacketActorCastDelegate>("40 53 57 48 81 EC ?? ?? ?? ?? 48 8B FA 8B D1", ProcessPacketActorCastDetour);
+            _processPacketActorCastHook.Enable();
+            Service.Log($"[WSG] ProcessPacketActorCast address = 0x{_processPacketActorCastHook.Address:X}");
 
-        _processPacketEffectResultBasicHook = Service.Hook.HookFromSignature<ProcessPacketEffectResultDelegate>("40 53 41 54 41 55 48 83 EC 40 83 3D ?? ?? ?? ?? ??", ProcessPacketEffectResultBasicDetour);
-        _processPacketEffectResultBasicHook.Enable();
-        Service.Log($"[WSG] ProcessPacketEffectResultBasic address = 0x{_processPacketEffectResultBasicHook.Address:X}");
+            _processPacketEffectResultHook = Service.Hook.HookFromSignature<ProcessPacketEffectResultDelegate>("48 8B C4 44 88 40 18 89 48 08", ProcessPacketEffectResultDetour);
+            _processPacketEffectResultHook.Enable();
+            Service.Log($"[WSG] ProcessPacketEffectResult address = 0x{_processPacketEffectResultHook.Address:X}");
 
-        _processPacketActorControlHook = Service.Hook.HookFromSignature<ProcessPacketActorControlDelegate>("E8 ?? ?? ?? ?? 0F B7 0B 83 E9 64", ProcessPacketActorControlDetour);
-        _processPacketActorControlHook.Enable();
-        Service.Log($"[WSG] ProcessPacketActorControl address = 0x{_processPacketActorControlHook.Address:X}");
+            _processPacketEffectResultBasicHook = Service.Hook.HookFromSignature<ProcessPacketEffectResultDelegate>("40 53 41 54 41 55 48 83 EC 40 83 3D ?? ?? ?? ?? ??", ProcessPacketEffectResultBasicDetour);
+            _processPacketEffectResultBasicHook.Enable();
+            Service.Log($"[WSG] ProcessPacketEffectResultBasic address = 0x{_processPacketEffectResultBasicHook.Address:X}");
 
-        // alt sig - impl: "45 33 D2 48 8D 41 48"
-        _processPacketNpcYellHook = Service.Hook.HookFromSignature<ProcessPacketNpcYellDelegate>("48 83 EC 68 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 44 24 ?? 0F 10 41 10", ProcessPacketNpcYellDetour);
-        _processPacketNpcYellHook.Enable();
-        Service.Log($"[WSG] ProcessPacketNpcYell address = 0x{_processPacketNpcYellHook.Address:X}");
+            _processPacketActorControlHook = Service.Hook.HookFromSignature<ProcessPacketActorControlDelegate>("E8 ?? ?? ?? ?? 0F B7 0B 83 E9 64", ProcessPacketActorControlDetour);
+            _processPacketActorControlHook.Enable();
+            Service.Log($"[WSG] ProcessPacketActorControl address = 0x{_processPacketActorControlHook.Address:X}");
 
-        _processMapEffectHook = Service.Hook.HookFromSignature<ProcessMapEffectDelegate>("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 8B FA 41 0F B7 E8", ProcessMapEffectDetour);
-        _processMapEffectHook.Enable();
-        Service.Log($"[WSG] ProcessMapEffect address = 0x{_processMapEffectHook.Address:X}");
+            // alt sig - impl: "45 33 D2 48 8D 41 48"
+            _processPacketNpcYellHook = Service.Hook.HookFromSignature<ProcessPacketNpcYellDelegate>("48 83 EC 68 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 44 24 ?? 0F 10 41 10", ProcessPacketNpcYellDetour);
+            _processPacketNpcYellHook.Enable();
+            Service.Log($"[WSG] ProcessPacketNpcYell address = 0x{_processPacketNpcYellHook.Address:X}");
 
-        var mapEffectAddrs = Service.SigScanner.ScanAllText("40 55 41 57 48 83 EC ?? 48 83 B9");
-        if (mapEffectAddrs.Length != 3)
-        {
-            throw new InvalidOperationException($"expected 3 matches for multi-MapEffect handlers, but got {mapEffectAddrs.Length}");
+            _processMapEffectHook = Service.Hook.HookFromSignature<ProcessMapEffectDelegate>("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 8B FA 41 0F B7 E8", ProcessMapEffectDetour);
+            _processMapEffectHook.Enable();
+            Service.Log($"[WSG] ProcessMapEffect address = 0x{_processMapEffectHook.Address:X}");
+
+            var mapEffectAddrs = Service.SigScanner.ScanAllText("40 55 41 57 48 83 EC ?? 48 83 B9");
+            if (mapEffectAddrs.Length != 3)
+            {
+                throw new InvalidOperationException($"expected 3 matches for multi-MapEffect handlers, but got {mapEffectAddrs.Length}");
+            }
+
+            _processMapEffect1Hook = Service.Hook.HookFromAddress<ProcessMapEffectNDelegate>(mapEffectAddrs[0], ProcessMapEffect1Detour);
+            _processMapEffect1Hook.Enable();
+            _processMapEffect2Hook = Service.Hook.HookFromAddress<ProcessMapEffectNDelegate>(mapEffectAddrs[1], ProcessMapEffect2Detour);
+            _processMapEffect2Hook.Enable();
+            _processMapEffect3Hook = Service.Hook.HookFromAddress<ProcessMapEffectNDelegate>(mapEffectAddrs[2], ProcessMapEffect3Detour);
+            _processMapEffect3Hook.Enable();
+            Service.Log($"[WSG] ProcessMapEffectN addresses = 0x{_processMapEffect1Hook.Address:X}, 0x{_processMapEffect2Hook.Address:X}, 0x{_processMapEffect3Hook.Address:X}");
+
+            _processPacketRSVDataHook = Service.Hook.HookFromSignature<ProcessPacketRSVDataDelegate>("44 8B 09 4C 8D 41 34", ProcessPacketRSVDataDetour);
+            _processPacketRSVDataHook.Enable();
+            Service.Log($"[WSG] ProcessPacketRSVData address = 0x{_processPacketRSVDataHook.Address:X}");
+
+            _processSystemLogMessageHook = Service.Hook.HookFromSignature<ProcessSystemLogMessageDelegate>("E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 0F B6 47 28", ProcessSystemLogMessageDetour);
+            _processSystemLogMessageHook.Enable();
+            Service.Log($"[WSG] ProcessSystemLogMessage address = 0x{_processSystemLogMessageHook.Address:X}");
+
+            _processPacketFateInfoHook = Service.Hook.HookFromSignature<ProcessPacketFateInfoDelegate>("E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 0F B7 4F 10 48 8D 57 12 41 B8", ProcessPacketFateInfoDetour);
+            _processPacketFateInfoHook.Enable();
+            Service.Log($"[WSG] ProcessPacketFateInfo address = 0x{_processPacketFateInfoHook.Address:X}");
+
+            _processPacketFateTradeHook = Service.Hook.HookFromSignature<ProcessPacketFateTradeDelegate>("48 89 5C 24 ?? 57 48 83 EC 20 48 8B DA 0F B7 F9", ProcessPacketFateTradeDetour);
+            _processPacketFateTradeHook.Enable();
+            Service.Log($"[WSG] ProcessPacketFateTrade address = 0x{_processPacketFateTradeHook.Address:X}");
+
+            _calculateMoveSpeedMulti = (delegate* unmanaged<ContainerInterface*, float>)Service.SigScanner.ScanText("E8 ?? ?? ?? ?? 44 0F 28 D8 45 0F 57 D2");
+            Service.Log($"[WSG] CalculateMovementSpeedMultiplier address = 0x{(nint)_calculateMoveSpeedMulti:X}");
+
+            var legacyMapEffectAddr = EventFramework.Addresses.SetDirectorData.Value;
+            if (legacyMapEffectAddr != 0)
+            {
+                _processLegacyMapEffectHook = Service.Hook.HookFromAddress<EventFramework.Delegates.SetDirectorData>(legacyMapEffectAddr, ProcessLegacyMapEffectDetour);
+                _processLegacyMapEffectHook.Enable();
+                Service.Log($"[WSG] LegacyMapEffect address = {_processLegacyMapEffectHook.Address:X}");
+            }
+            else
+            {
+                Service.Log("[WSG] LegacyMapEffect address is null — hook skipped (CS may need updating for this client)");
+            }
+
+            _inventoryAckHook = Service.Hook.HookFromSignature<InventoryAckDelegate>("48 89 5C 24 ?? 57 48 83 EC 30 48 8B 05 ?? ?? ?? ?? 48 8B D9 41 0F B6 50 ??", InventoryAckDetour);
+            _inventoryAckHook.Enable();
+            Service.Log($"[WSG] InventoryAck address = {_inventoryAckHook.Address:X}");
+
+            _processPlayActionTimelineSyncHook = Service.Hook.HookFromSignature<ProcessPacketPlayActionTimelineSync>("48 8B D1 48 8D 0D ?? ?? ?? ?? E9 ?? ?? ?? ?? CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC 40 53 56", ProcessPlayActionTimelineSyncDetour);
+            _processPlayActionTimelineSyncHook.Enable();
+            Service.Log($"[WSG] ProcessPlayActionTimelineSync address = {_processPlayActionTimelineSyncHook.Address:X}");
+
+            var getActionInRangeOrLoSAddr = (nint)ActionManager.MemberFunctionPointers.GetActionInRangeOrLoS;
+            if (getActionInRangeOrLoSAddr != 0)
+            {
+                _getActionInRangeOrLoSHook = Service.Hook.HookFromAddress<ActionManager.Delegates.GetActionInRangeOrLoS>(getActionInRangeOrLoSAddr, GetActionInRangeOrLoSDetour);
+                _getActionInRangeOrLoSHook.Enable();
+                Service.Log($"[WSG] GetActionInRangeOrLoS address = 0x{_getActionInRangeOrLoSHook.Address:X}");
+            }
+            else
+            {
+                Service.Log("[WSG] GetActionInRangeOrLoS address is null — hook skipped (CS may need updating for this client)");
+            }
         }
-
-        _processMapEffect1Hook = Service.Hook.HookFromAddress<ProcessMapEffectNDelegate>(mapEffectAddrs[0], ProcessMapEffect1Detour);
-        _processMapEffect1Hook.Enable();
-        _processMapEffect2Hook = Service.Hook.HookFromAddress<ProcessMapEffectNDelegate>(mapEffectAddrs[1], ProcessMapEffect2Detour);
-        _processMapEffect2Hook.Enable();
-        _processMapEffect3Hook = Service.Hook.HookFromAddress<ProcessMapEffectNDelegate>(mapEffectAddrs[2], ProcessMapEffect3Detour);
-        _processMapEffect3Hook.Enable();
-        Service.Log($"[WSG] ProcessMapEffectN addresses = 0x{_processMapEffect1Hook.Address:X}, 0x{_processMapEffect2Hook.Address:X}, 0x{_processMapEffect3Hook.Address:X}");
-
-        _processPacketRSVDataHook = Service.Hook.HookFromSignature<ProcessPacketRSVDataDelegate>("44 8B 09 4C 8D 41 34", ProcessPacketRSVDataDetour);
-        _processPacketRSVDataHook.Enable();
-        Service.Log($"[WSG] ProcessPacketRSVData address = 0x{_processPacketRSVDataHook.Address:X}");
-
-        _processSystemLogMessageHook = Service.Hook.HookFromSignature<ProcessSystemLogMessageDelegate>("E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 0F B6 47 28", ProcessSystemLogMessageDetour);
-        _processSystemLogMessageHook.Enable();
-        Service.Log($"[WSG] ProcessSystemLogMessage address = 0x{_processSystemLogMessageHook.Address:X}");
-
-        _processPacketFateInfoHook = Service.Hook.HookFromSignature<ProcessPacketFateInfoDelegate>("E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 0F B7 4F 10 48 8D 57 12 41 B8", ProcessPacketFateInfoDetour);
-        _processPacketFateInfoHook.Enable();
-        Service.Log($"[WSG] ProcessPacketFateInfo address = 0x{_processPacketFateInfoHook.Address:X}");
-
-        _processPacketFateTradeHook = Service.Hook.HookFromSignature<ProcessPacketFateTradeDelegate>("48 89 5C 24 ?? 57 48 83 EC 20 48 8B DA 0F B7 F9", ProcessPacketFateTradeDetour);
-        _processPacketFateTradeHook.Enable();
-        Service.Log($"[WSG] ProcessPacketFateTrade address = 0x{_processPacketFateTradeHook.Address:X}");
-
-        _calculateMoveSpeedMulti = (delegate* unmanaged<ContainerInterface*, float>)Service.SigScanner.ScanText("E8 ?? ?? ?? ?? 44 0F 28 D8 45 0F 57 D2");
-        Service.Log($"[WSG] CalculateMovementSpeedMultiplier address = 0x{(nint)_calculateMoveSpeedMulti:X}");
-
-        var legacyMapEffectAddr = EventFramework.Addresses.SetDirectorData.Value;
-        if (legacyMapEffectAddr != 0)
+        catch
         {
-            _processLegacyMapEffectHook = Service.Hook.HookFromAddress<EventFramework.Delegates.SetDirectorData>(legacyMapEffectAddr, ProcessLegacyMapEffectDetour);
-            _processLegacyMapEffectHook.Enable();
-            Service.Log($"[WSG] LegacyMapEffect address = {_processLegacyMapEffectHook.Address:X}");
-        }
-        else
-        {
-            Service.Log("[WSG] LegacyMapEffect address is null — hook skipped (CS may need updating for this client)");
-        }
-
-        _inventoryAckHook = Service.Hook.HookFromSignature<InventoryAckDelegate>("48 89 5C 24 ?? 57 48 83 EC 30 48 8B 05 ?? ?? ?? ?? 48 8B D9 41 0F B6 50 ??", InventoryAckDetour);
-        _inventoryAckHook.Enable();
-        Service.Log($"[WSG] InventoryAck address = {_inventoryAckHook.Address:X}");
-
-        _processPlayActionTimelineSyncHook = Service.Hook.HookFromSignature<ProcessPacketPlayActionTimelineSync>("48 8B D1 48 8D 0D ?? ?? ?? ?? E9 ?? ?? ?? ?? CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC 40 53 56", ProcessPlayActionTimelineSyncDetour);
-        _processPlayActionTimelineSyncHook.Enable();
-        Service.Log($"[WSG] ProcessPlayActionTimelineSync address = {_processPlayActionTimelineSyncHook.Address:X}");
-
-        var getActionInRangeOrLoSAddr = (nint)ActionManager.MemberFunctionPointers.GetActionInRangeOrLoS;
-        if (getActionInRangeOrLoSAddr != 0)
-        {
-            _getActionInRangeOrLoSHook = Service.Hook.HookFromAddress<ActionManager.Delegates.GetActionInRangeOrLoS>(getActionInRangeOrLoSAddr, GetActionInRangeOrLoSDetour);
-            _getActionInRangeOrLoSHook.Enable();
-            Service.Log($"[WSG] GetActionInRangeOrLoS address = 0x{_getActionInRangeOrLoSHook.Address:X}");
-        }
-        else
-        {
-            Service.Log("[WSG] GetActionInRangeOrLoS address is null — hook skipped (CS may need updating for this client)");
+            Dispose();
+            throw;
         }
     }
 
     public void Dispose()
     {
-        _processPlayActionTimelineSyncHook.Dispose();
-        _inventoryAckHook.Dispose();
+        _processPlayActionTimelineSyncHook?.Dispose();
+        _inventoryAckHook?.Dispose();
         _processLegacyMapEffectHook?.Dispose();
-        _processMapEffect1Hook.Dispose();
-        _processMapEffect2Hook.Dispose();
-        _processMapEffect3Hook.Dispose();
-        _processPacketActorCastHook.Dispose();
-        _processPacketEffectResultBasicHook.Dispose();
-        _processPacketEffectResultHook.Dispose();
-        _processPacketActorControlHook.Dispose();
-        _processPacketNpcYellHook.Dispose();
-        _processMapEffectHook.Dispose();
-        _processPacketRSVDataHook.Dispose();
-        _processSystemLogMessageHook.Dispose();
-        _processPacketFateTradeHook.Dispose();
-        _processPacketFateInfoHook.Dispose();
+        _processMapEffect1Hook?.Dispose();
+        _processMapEffect2Hook?.Dispose();
+        _processMapEffect3Hook?.Dispose();
+        _processPacketActorCastHook?.Dispose();
+        _processPacketEffectResultBasicHook?.Dispose();
+        _processPacketEffectResultHook?.Dispose();
+        _processPacketActorControlHook?.Dispose();
+        _processPacketNpcYellHook?.Dispose();
+        _processMapEffectHook?.Dispose();
+        _processPacketRSVDataHook?.Dispose();
+        _processSystemLogMessageHook?.Dispose();
+        _processPacketFateTradeHook?.Dispose();
+        _processPacketFateInfoHook?.Dispose();
         _getActionInRangeOrLoSHook?.Dispose();
-        _subscriptions.Dispose();
-        _netConfig.Dispose();
+        _actionEffects?.Dispose();
+        _netConfig?.Dispose();
         _interceptor.Dispose();
     }
 
@@ -1019,26 +1023,6 @@ sealed class WorldStateGameSync : IDisposable
             _ws.Execute(new ClientState.OpFlyingChange(isFlying));
         }
 
-        Span<Cooldown> cooldowns = stackalloc Cooldown[_ws.Client.Cooldowns.Length];
-        _amex.GetCooldowns(cooldowns);
-        if (!MemoryExtensions.SequenceEqual(_ws.Client.Cooldowns.AsSpan(), cooldowns))
-        {
-            if (cooldowns.IndexOfAnyExcept(default(Cooldown)) < 0)
-            {
-                _ws.Execute(new ClientState.OpCooldown(true, []));
-            }
-            else
-            {
-                _ws.Execute(new ClientState.OpCooldown(false, CalcCooldownDifference(cooldowns, _ws.Client.Cooldowns.AsSpan())));
-            }
-        }
-
-        var dutyActions = _amex.GetDutyActions();
-        if (!MemoryExtensions.SequenceEqual(_ws.Client.DutyActions.AsSpan(), dutyActions))
-        {
-            _ws.Execute(new ClientState.OpDutyActionsChange(dutyActions));
-        }
-
         Span<byte> bozjaHolster = stackalloc byte[_ws.Client.BozjaHolster.Length];
         bozjaHolster.Clear();
         var bozjaState = PublicContentBozja.GetState();
@@ -1381,6 +1365,35 @@ sealed class WorldStateGameSync : IDisposable
     }
 
     private void OnActionRequested(ClientActionRequest arg) => _globalOps.Add(new ClientState.OpActionRequest(arg));
+
+    private unsafe void ObserveActionEffect(uint casterID, Character* casterObj, Vector3* targetPos, ActionEffectHandler.Header* header, ActionEffectHandler.TargetEffects* effects, GameObjectId* targets)
+    {
+        // notify listeners about the event
+        // note: there's a slight difference with dispatching event from here rather than from packet processing (ActionEffectN) functions
+        // 1. action id is already unscrambled
+        // 2. this function won't be called if caster object doesn't exist
+        // the last point is deemed to be minor enough for us to not care, as it simplifies things (no need to hook 5 functions)
+        try
+        {
+            var info = new ActorCastEvent(new((ActionType)header->ActionType, header->ActionId), header->AnimationTargetId, header->AnimationLock, header->NumTargets, *targetPos,
+                header->GlobalSequence, header->SourceSequence, Network.PacketDecoder.IntToFloatAngle(header->RotationInt));
+            var rawEffects = (ulong*)effects;
+            for (var i = 0; i < header->NumTargets; ++i)
+            {
+                var targetEffects = new ActionEffects();
+                for (var j = 0; j < ActionEffects.MaxCount; ++j)
+                {
+                    targetEffects[j] = rawEffects[i * 8 + j];
+                }
+
+                info.Targets.Add(new(targets[i], targetEffects));
+            }
+            OnActionEffect(casterID, info);
+
+        }
+        catch (Exception ex) { Service.Logger.Error(ex, "Recording an action effect failed."); }
+        _actionEffects.Original(casterID,casterObj,targetPos,header,effects,targets);
+    }
 
     private void OnActionEffect(ulong casterID, ActorCastEvent info) => _actorOps.GetOrAdd(casterID).Add(new ActorState.OpCastEvent(casterID, info));
 

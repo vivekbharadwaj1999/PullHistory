@@ -308,7 +308,7 @@ public sealed class ReplayManager(RotationDatabase rotationDB, string logDirecto
         }
         if (dispose) // replays somehow don't get cleaned up correctly without this?
         {
-            Plugin.GarbageCollection();
+
         }
     }
 
@@ -394,7 +394,7 @@ public sealed class ReplayManager(RotationDatabase rotationDB, string logDirecto
         }
         if (dispose) // replays somehow don't get cleaned up correctly without this?
         {
-            Plugin.GarbageCollection();
+
         }
     }
 
