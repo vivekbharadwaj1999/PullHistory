@@ -91,14 +91,19 @@ public sealed partial class Plugin
         int latest=CurrentSkill(sequence,at);
         bool active=latest>=0 && at<sequence[latest].Item2.End;
         float width=ImGui.GetContentRegionAvail().X;
-        float size=Math.Max(1,Math.Min(ImGui.GetTextLineHeight()*1.68f,(width*.72f-16)/9));
+        const float currentScale=1.10f;
+        float size=Math.Max(1,Math.Min(ImGui.GetTextLineHeight()*1.68f,(width*.72f-16)/(8+currentScale)));
+        float rowHeight=size*currentScale;
         var draw=ImGui.GetWindowDrawList();
         for(int slot=-4;slot<=4;slot++)
         {
             if(slot!=-4) ImGui.SameLine(0,2);
-            var pos=ImGui.GetCursorScreenPos();
-            var end=pos+new Vector2(size);
-            ImGui.Dummy(new Vector2(size));
+            float cellWidth=slot==0 ? rowHeight : size;
+            float iconSize=slot==0 && active ? rowHeight : size;
+            var cell=new Vector2(cellWidth,rowHeight);
+            var pos=ImGui.GetCursorScreenPos()+(cell-new Vector2(iconSize))*.5f;
+            var end=pos+new Vector2(iconSize);
+            ImGui.Dummy(cell);
             draw.AddRectFilled(pos,end,0xb0302929,2);
             int index=latest+slot+(!active && slot<0 ? 1 : 0);
             if((slot!=0 || active) && index>=0 && index<sequence.Length)
