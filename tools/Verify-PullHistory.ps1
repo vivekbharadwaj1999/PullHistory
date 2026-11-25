@@ -95,6 +95,25 @@ try{
         if($summary.Invoke($null,@($check)).Outcome -ne 'Success'){throw 'Deltascape replay outcome wrong'}
         'Simulated Deltascape V1.0 pull, death, archive and Success verified.'
     }finally{$on.Dispose();$off.Dispose();$mgr.Dispose()}
+    $fallbackFolder=$testFolder.CreateSubdirectory("module-free")
+    $plugin.GetField('pullDirectory',$instance).SetValue($owner,$fallbackFolder)
+    $plugin.GetField('dutyCombat',$instance).SetValue($owner,(New-Object object))
+    $ws.CurrentCFCID=253
+    $ws.Execute([BossMod.ActorState+OpDestroy]::new(102))
+    $ws.Execute([BossMod.ActorState+OpCombat]::new(101,$true))
+    $updateCombat=$plugin.GetMethod('UpdateDutyCombat',$instance)
+    $updateCombat.Invoke($owner,@())
+    AdvanceFixture 10
+    $plugin.GetMethod('MarkDutyOutcome',$instance).Invoke($owner,@([uint32]253,"Success"))
+    if(!$plugin.GetField('finishing',$instance).GetValue($owner)){throw 'Duty clear did not close the generic pull'}
+    $plugin.GetMethod('Finish',$instance).Invoke($owner,@())
+    $files=$fallbackFolder.GetFiles('Pull-*-Duty253-*.log')
+    if($files.Length -ne 1){throw 'Module-free duty recording missing'}
+    $check=[BossMod.ReplayParserLog]::Parse($files[0].FullName,[ref]$progress,[Threading.CancellationToken]::None)
+    $result=$summary.Invoke($null,@($check))
+    if($check.Encounters.Count -ne 0 -or $result.Outcome -ne 'Success' -or $result.Duration -ne '0:05' -or $result.Members.Length -ne 1){throw "Module-free summary failed: $result"}
+    $plugin.GetMethod('LoadTracks',$instance).Invoke($owner,@($check))
+    'Module-free duty capture, roster, duration, clear and playback tracks verified.'
 }finally{$testFolder.Delete($true)}
 foreach($fight in 'M10S','M11S'){
     $file=Get-ChildItem -LiteralPath $Archive -Filter "*$fight*.log"|Sort-Object Length -Descending|Select-Object -First 1

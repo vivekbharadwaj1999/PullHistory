@@ -34,6 +34,11 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
     private DirectoryInfo archive;
     private string pendingPath;
     private bool finishing;
+    private readonly object dutyCombat = new();
+    private ushort previousDuty;
+    private bool wasInCombat;
+    private DateTime quietSince;
+    private readonly IDutyState duties;
 
 
     public sealed class PlaybackSettings : Dalamud.Configuration.IPluginConfiguration
@@ -53,9 +58,10 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
     private readonly ITextureProvider textures;
     private readonly IDataManager data;
 
-    public Plugin(IDataManager data, ITextureProvider textures, IDalamudPluginInterface pluginInterface, ICommandManager commands, IFramework framework, IChatGui chat, IPluginLog log)
+    public Plugin(IDataManager data, ITextureProvider textures, IDalamudPluginInterface pluginInterface, ICommandManager commands, IFramework framework, IChatGui chat, IPluginLog log, IDutyState duties)
     {
         this.textures = textures;
+        this.duties = duties;
         this.data = data;
         this.commands = commands;
         this.framework = framework;
@@ -103,6 +109,8 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
         pluginInterface.UiBuilder.Draw += DrawPlayback;
         pluginInterface.UiBuilder.OpenMainUi += ShowList;
         framework.Update += Update;
+        duties.DutyCompleted += OnDutyCompleted;
+        duties.DutyWiped += OnDutyWiped;
     }
 
     private static FieldInfo Field(Type type, string name, BindingFlags flags = Instance) =>
@@ -178,6 +186,40 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
         if(finishing && active.Count==0) Finish();
         gameSync.Update(frame.UpdateDelta);
         encounterManager.Update();
+        UpdateDutyCombat();
+    }
+
+    private void OnDutyCompleted(Dalamud.Game.DutyState.IDutyStateEventArgs e) => MarkDutyOutcome(e.ContentFinderCondition.RowId, "Success");
+    private void OnDutyWiped(Dalamud.Game.DutyState.IDutyStateEventArgs e) => MarkDutyOutcome(e.ContentFinderCondition.RowId, "Failure");
+
+    private void MarkDutyOutcome(uint duty, string outcome)
+    {
+        if (recording == null || duty != world.CurrentCFCID) return;
+        world.Execute(new BossMod.WorldState.OpUserMarker("PullHistory.Outcome." + outcome));
+        End(dutyCombat);
+    }
+
+    private void UpdateDutyCombat()
+    {
+        ushort duty = world.CurrentCFCID;
+        if (previousDuty != duty)
+        {
+            End(dutyCombat);
+            wasInCombat = false;
+            previousDuty = duty;
+        }
+        bool inCombat = false;
+        if (duty != 0 && !world.IsPvPArea)
+            for (int i = 0; i < 8; ++i)
+                if (world.Party[i]?.InCombat == true) { inCombat = true; break; }
+        if (inCombat && !wasInCombat && active.Count == 0 && !finishing)
+            Begin(dutyCombat);
+        if (!inCombat && active.Contains(dutyCombat))
+        {
+            if (wasInCombat) quietSince = world.CurrentTime;
+            if ((world.CurrentTime - quietSince).TotalSeconds >= 3) End(dutyCombat);
+        }
+        wasInCombat = inCombat;
     }
 
     private DirectoryInfo PullFolder()=>pullDirectory;
@@ -188,13 +230,19 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
         {
             if (Convert.ToUInt32(Read(world, "CurrentCFCID")) == 0) return;
             if (finishing && active.Count == 0) Finish();
+            if (module != dutyCombat && active.Remove(dutyCombat))
+            {
+                active.Add(module);
+                return;
+            }
             if (!active.Add(module) || active.Count != 1) return;
             archive = PullFolder();
             var pending = archive.CreateSubdirectory("InProgress");
             var type = world.GetType().Assembly.GetType("BossMod.ReplayRecorder", true);
             var ctor = type.GetConstructors().Single(c => c.GetParameters().Length == 6);
             var format = Enum.Parse(ctor.GetParameters()[1].ParameterType, "BinaryCompressed");
-            var prefix = $"Pull-{DateTime.UtcNow:yyyyMMdd-HHmmss-fffffff}-{module.GetType().Name}-{Guid.NewGuid():N}";
+            var encounterName = module == dutyCombat ? $"Duty{world.CurrentCFCID}" : module.GetType().Name;
+            var prefix = $"Pull-{DateTime.UtcNow:yyyyMMdd-HHmmss-fffffff}-{encounterName}-{Guid.NewGuid():N}";
             recording = (IDisposable)ctor.Invoke(new object[] { world, format, true, pending, prefix, anonymize });
             pendingPath = (string)Read(recording, "LogPath");
         }
@@ -237,13 +285,15 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
         listDirty = true;
     }
 
-    private static string PullLabel(FileInfo file)
+    private string PullLabel(FileInfo file)
     {
         var parts = Path.GetFileNameWithoutExtension(file.Name).Split('-');
         if (!DateTime.TryParseExact(string.Join("-", parts, 1, 3), "yyyyMMdd-HHmmss-fffffff",
             CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var start))
             return file.Name;
         var encounter = Regex.Replace(parts[4], @"(?<=[a-z0-9])(?=[A-Z][a-z])|(?<=[A-Z])(?=[A-Z][a-z])", " ");
+        if (parts[4].StartsWith("Duty", StringComparison.Ordinal) && uint.TryParse(parts[4].AsSpan(4), out var id))
+            encounter = data.GetExcelSheet<Lumina.Excel.Sheets.ContentFinderCondition>().GetRowOrDefault(id)?.Name.ExtractText() ?? encounter;
         return $"{start.ToLocalTime():yyyy-MM-dd  HH:mm:ss}    {encounter}";
     }
 
@@ -360,6 +410,8 @@ public sealed partial class Plugin : IAsyncDalamudPlugin
         pluginInterface.UiBuilder.Draw -= DrawList;
         pluginInterface.UiBuilder.Draw -= DrawPlayback;
         pluginInterface.UiBuilder.OpenMainUi -= ShowList;
+        duties.DutyCompleted -= OnDutyCompleted;
+        duties.DutyWiped -= OnDutyWiped;
         framework.Update -= Update;
         commands.RemoveHandler("/lastpull");
         Detach();

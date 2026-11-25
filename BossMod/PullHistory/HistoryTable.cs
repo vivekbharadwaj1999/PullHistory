@@ -52,6 +52,12 @@ public sealed partial class Plugin
                 if((string)who.Type.ToString()=="Player" && jobs.TryGetValue((ulong)who.InstanceID,out var job))
                     AddMember(roster,(object)who,job);
         }
+        var logData=(BossMod.Replay)replay;
+        if (firstStart == DateTime.MaxValue && logData.Ops.Count > 0)
+        {
+            firstStart=logData.Ops[0].Timestamp;
+            lastEnd=logData.Ops[^1].Timestamp;
+        }
         string duration=lastEnd>=firstStart ? Stamp((float)(lastEnd-firstStart).TotalSeconds) : "—";
         string outcome="Unknown";
         foreach(dynamic update in (IEnumerable)Read(replay,"DirectorUpdates"))
@@ -70,6 +76,11 @@ public sealed partial class Plugin
                 && boss.DeadHistory.Any(change => change.Item2 && change.Item1 >= firstStart
                     && change.Item1 <= lastEnd && (lastEnd - change.Item1).TotalSeconds <= 2))
                 outcome = "Success";
+        }
+        foreach (var marker in logData.UserMarkers)
+        {
+            if (marker.Text == "PullHistory.Outcome.Success") outcome = "Success";
+            if (marker.Text == "PullHistory.Outcome.Failure") outcome = "Failure";
         }
         return new PullSummary(duration,roster.Values.ToArray(),outcome);
     }

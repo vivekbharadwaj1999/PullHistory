@@ -9,6 +9,33 @@ using Dalamud.Bindings.ImGui;
 namespace PullHistory;
 public sealed partial class Plugin
 {
+    // A coordinate view of recorded actors where no encounter-specific arena is available.
+    private sealed class RecordedArena(BossMod.WorldState world, Vector2 center, float extent)
+    {
+        public BossMod.MiniArena Arena { get; } = new(new BossMod.WPos(center.X, center.Y), new BossMod.ArenaBoundsSquare(extent));
+        public void Draw(BossMod.Angle angle, int pov, bool text, bool drawArena)
+        {
+            var player = world.Party[pov];
+            Arena.Begin(angle, player, player);
+            try
+            {
+                if (BossMod.BossModule.WindowConfig.ShowCardinals) Arena.CardinalNames();
+                for (var mark = BossMod.Waymark.A; mark < BossMod.Waymark.Count; mark++)
+                    if (BossMod.BossModule.WindowConfig.ShowWaymarks && world.Waymarks[mark] is Vector3 pos)
+                        Arena.TextWorld(new BossMod.WPos(pos.X,pos.Z), mark.ToString().TrimStart('N'), 0xffffffff);
+                for (var sign = BossMod.Sign.Attack1; sign < BossMod.Sign.Count; sign++)
+                {
+                    if (!BossMod.BossModule.WindowConfig.ShowSigns) break;
+                    var target=world.Actors.Find(world.Waymarks[sign]);
+                    if (target == null || !BossMod.Service.Texture.TryGetFromGameIcon(BossMod.SignExtensions.IconId(sign),out var texture)) continue;
+                    var pos=Arena.WorldPositionToScreenPosition(target.Position);
+                    Arena.SpriteScreen(pos-new Vector2(BossMod.BossModule.WindowConfig.ArenaScale*24),pos,texture.GetWrapOrEmpty());
+                }
+            }
+            finally { Arena.End(); }
+        }
+    }
+
     private sealed class ReplayRadar : IDisposable
     {
         private readonly dynamic player, config;
@@ -21,6 +48,8 @@ public sealed partial class Plugin
         public float PixelsPerYalm { get; private set; }
         public dynamic World => player.WorldState;
         public dynamic Module => manager.ActiveModule;
+        private RecordedArena fallback;
+        public object Fallback(Vector2 center,float extent) => fallback ??= new RecordedArena((BossMod.WorldState)World,center,extent);
         public ReplayRadar(object replay)
         {
 
@@ -37,6 +66,7 @@ public sealed partial class Plugin
         }
         private void BindManager()
         {
+            fallback=null;
             zones=new BossMod.ZoneModuleManager((BossMod.WorldState)World);
             manager=Activator.CreateInstance(managerType,(object)World);
             update=(Action)managerType.GetMethod("Update").CreateDelegate(typeof(Action),(object)manager);
@@ -110,8 +140,9 @@ public sealed partial class Plugin
                     radar.DrawZone();
                     int pov=0;
                     while(pov<8 && world.Party[pov]==null) pov++;
-                    if(module!=null && pov<8)
+                    if(pov<8)
                     {
+                        if(module==null) module=radar.Fallback(center,extent);
                         radar.Draw(module,pov);
                         foreach(dynamic actor in enemies) DrawMarker(actor,module.Arena.WorldPositionToScreenPosition(actor.Position),false);
                         DrawPlayers(module,players,at);
