@@ -295,7 +295,7 @@ public sealed partial class Plugin
         draw.AddTriangleFilled(edge+forward*7,edge-across,edge+across,dead ? tint : player ? 0xfff0e2b0u : 0xff829dffu);
         if(!player && ImGui.IsWindowHovered() && Vector2.DistanceSquared(ImGui.GetMousePos(),xy)<100) ImGui.SetTooltip((string)actor.Name);
     }
-    private static void DrawPanelHeading(string title,int? count=null)
+    private static void DrawPanelHeading(string title,int? count=null, Action extra=null)
     {
         ImGui.TextUnformatted(title);
         if(count.HasValue)
@@ -303,13 +303,14 @@ public sealed partial class Plugin
             ImGui.SameLine(0,5);
             ImGui.TextDisabled(count.Value.ToString());
         }
+        if(extra!=null) { ImGui.SameLine(); extra(); }
         ImGui.Separator();
     }
 
     private void DrawActors(string title,IEnumerable<object> actors,DateTime at,float height,ulong boss)
     {
         var rows=actors as List<object> ?? actors.ToList();
-        DrawPanelHeading(title,rows.Count);
+        DrawPanelHeading(title,rows.Count,title=="Players" ? () => DrawOutput(0,at,false) : null);
         if(!ImGui.BeginTable(title+" compact",1,ImGuiTableFlags.ScrollY,new Vector2(0,height))) return;
         try
         {
@@ -353,7 +354,19 @@ public sealed partial class Plugin
                     else DrawBar(0,width,0xff345f94,"","No active cast");
                 }
                 DrawStatuses((Array)actor.Statuses,at);
-                if(playbackSettings.ShowRotationsAndCastBars && player) DrawRotation((ulong)actor.InstanceID,at);
+                if(player)
+                {
+                    ImGui.BeginGroup();
+                    if(playbackSettings.ShowRotationsAndCastBars)
+                    {
+                        ImGui.BeginGroup();
+                        DrawRotation((ulong)actor.InstanceID,at);
+                        ImGui.EndGroup();
+                        ImGui.SameLine(0,ImGui.GetStyle().ItemSpacing.X);
+                    }
+                    DrawOutput((ulong)actor.InstanceID,at,playbackSettings.ShowRotationsAndCastBars);
+                    ImGui.EndGroup();
+                }
                 ulong id=actor.InstanceID;
                 var end=new Vector2(origin.X+width,ImGui.GetItemRectMax().Y);
                 bool rowHovered=ImGui.IsWindowHovered() && ImGui.IsMouseHoveringRect(origin,end);
@@ -416,8 +429,8 @@ public sealed partial class Plugin
         float oldHeight=Math.Max(1,Math.Min(ImGui.GetTextLineHeight()*1.2f,(available-active+1)/active));
         // Native status art is 24 by 32. The old square cells added side padding to the visible gap.
         const float aspect=24f/32f;
-        float gap=(oldHeight*(1-aspect)+1)*.5f;
-        float cellWidth=Math.Max(1,Math.Min(oldHeight*1.2f*aspect,(available-gap*(active-1))/active));
+        float gap=(oldHeight*(1-aspect)+1)*.25f;
+        float cellWidth=Math.Max(1,Math.Min(oldHeight*1.44f*aspect,(available-gap*(active-1))/active));
         float height=cellWidth/aspect;
         float startX=ImGui.GetCursorScreenPos().X;
         int count=0;

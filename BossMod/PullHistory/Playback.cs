@@ -86,7 +86,7 @@ public sealed partial class Plugin
         extent = Math.Max(12, Math.Max(max.X-min.X,max.Y-min.Y)/2 + 3);
         deaths = found.Where(t => !t.Enemy).SelectMany(t => t.Deaths.Where(d => d.Item2).Select(d => (d.Item1,t.Name)))
             .OrderBy(d => d.Item1).ToArray();
-        tracks = found.ToArray(); LoadRotations(replay);
+        tracks = found.ToArray(); LoadRotations(replay); LoadOutput((BossMod.Replay)replay);
     }
 
     private static int At<T>((DateTime,T)[] events, DateTime time)

@@ -123,6 +123,21 @@ foreach($fight in 'M10S','M11S'){
     $meta=$summary.Invoke($null,@($rec))
     if($meta.Members.Length -ne 8 -or ($meta.Members.Job -contains 0) -or $meta.Duration -eq '—'){throw "$fight roster or duration failed"}
     $plugin.GetMethod('LoadTracks',$instance).Invoke($owner,@($rec))
+    $outputAt=$plugin.GetMethod('OutputAt',$instance)
+    $start=$plugin.GetField('first',$instance).GetValue($owner)
+    $finish=$plugin.GetField('last',$instance).GetValue($owner)
+    $group=$outputAt.Invoke($owner,@([ulong]0,$finish))
+    $damage=0.0
+    $healing=0.0
+    foreach($member in $rec.Encounters[0].PartyMembers){
+        $rates=$outputAt.Invoke($owner,@($member.Item1.InstanceID,$finish))
+        $damage+=$rates.Item1
+        $healing+=$rates.Item2
+    }
+    if($group.Item1 -le 0 -or $group.Item2 -le 0 -or [Math]::Abs($group.Item1-$damage) -gt .01 -or [Math]::Abs($group.Item2-$healing) -gt .01){throw "$fight party output disagrees with player totals: $group vs $damage / $healing"}
+    $rewound=$outputAt.Invoke($owner,@([ulong]0,$start))
+    if($rewound.Item1 -ne 0 -or $rewound.Item2 -ne 0){throw 'Future output appeared at the start of playback'}
+    "$fight end-of-pull group rates match eight player totals: $group"
     $rotations=$plugin.GetField('rotations',$instance).GetValue($owner)
     if($rotations.Count -lt 8){throw "$fight rotation history missing"}
     $radar=$plugin.GetNestedType('ReplayRadar',[Reflection.BindingFlags]::NonPublic).GetConstructors()[0].Invoke(@($rec))

@@ -90,12 +90,12 @@ public sealed partial class Plugin
         bool casting=latest>=0 && sequence[latest].Item2.Cast && at<sequence[latest].Item2.End;
         float width=ImGui.GetContentRegionAvail().X;
         const float currentScale=1.10f;
-        float size=Math.Max(1,Math.Min(ImGui.GetTextLineHeight()*1.68f,(width*.72f-16)/(8+currentScale)));
+        float size=Math.Max(1,Math.Min(ImGui.GetTextLineHeight()*1.68f,(width-ImGui.CalcTextSize("HPS 999,999").X-20)/(6+currentScale)));
         float rowHeight=size*currentScale;
         var draw=ImGui.GetWindowDrawList();
-        for(int slot=-4;slot<=4;slot++)
+        for(int slot=-3;slot<=3;slot++)
         {
-            if(slot!=-4) ImGui.SameLine(0,2);
+            if(slot!=-3) ImGui.SameLine(0,2);
             float cellWidth=slot==0 ? rowHeight : size;
             float iconSize=cellWidth;
             var cell=new Vector2(cellWidth,rowHeight);
@@ -120,8 +120,8 @@ public sealed partial class Plugin
             }
             if(slot==0) draw.AddRect(pos,end,0xff55dfff,2,ImDrawFlags.None,2);
         }
-        ImGui.SameLine(0,4);
-        float barWidth=Math.Max(1,ImGui.GetContentRegionAvail().X);
+
+        float barWidth=size*(6+currentScale)+12;
         if(casting)
         {
             var (start,skill)=sequence[latest];
